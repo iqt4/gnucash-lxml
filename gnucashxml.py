@@ -101,6 +101,9 @@ class Commodity(object):
     Consists of a name (or id) and a space (namespace).
     """
 
+    # Not implemented
+    # - fraction
+    # - slots
     def __init__(self, space, symbol, name=None, xcode=None):
         self.space = space
         self.symbol = symbol
@@ -111,7 +114,7 @@ class Commodity(object):
         return self.name
 
     def __repr__(self):
-        return "<Commodity {}:{}>".format(self.space, self.name)
+        return "<Commodity {}:{}>".format(self.space, self.symbol)
 
 
 class Account(object):
@@ -144,7 +147,7 @@ class Account(object):
             return ''
 
     def __repr__(self):
-        return "<Account '{}[{}]' {}...>".format(self.name, self.commodity, self.guid[:10])
+        return "<Account '{}[{}]' {}...>".format(self.name, self.commodity.id, self.guid[:10])
 
     def walk(self):
         """
@@ -283,10 +286,10 @@ def from_filename(filename):
     """Parse a GNU Cash file and return a Book object."""
     try:
         # try opening with gzip decompression
-        return parse(gzip.open(filename, "rb"))
+        return _iterparse(gzip.open(filename, "rb"))
     except IOError:
         # try opening without decompression
-        return parse(open(filename, "rb"))
+        return _iterparse(open(filename, "rb"))
 
 
 # Implemented:
@@ -307,6 +310,182 @@ def parse(fobj):
         raise ValueError("File stream was not a valid GNU Cash v2 XML file")
     return _book_from_tree(root.find("{http://www.gnucash.org/XML/gnc}book"))
 
+
+def _book_from_iter(xml_iter, ns_map):
+    commoditiesdict = {}
+    accountsdict = {}
+    parentguid = {}
+    transactions = []
+
+    # Not implemented:
+    # - cmdty:get_quotes => unknown, empty, optional
+    # - cmdty:quote_tz => unknown, empty, optional
+    # - cmdty:source => text, optional, e.g. "currency"
+    # - cmdty:fraction => optional, e.g. "1"
+    def add_commodity(elem):
+        taglist = [
+            'cmdty:space',  # namespace
+            'cmdty:id',     # symbol, e.g. EUR or
+            'cmdty:name',   # optional
+            'cmdty:xcode'   # optional, e.g. ISIN/WKN
+        ]
+
+        p = {}
+        for e in list(elem):
+            uri, tag = e.tag[1:].split("}")
+            tag = ns_map[uri] + ':' + tag
+            if tag in taglist:
+                p[tag] = e.text
+
+        c_space = p['cmdty:space']
+        c_id = p['cmdty:id']
+        commodity = Commodity(c_space, c_id)
+        commoditiesdict[(c_space, c_id)] = commodity
+
+        if 'cmdty:name' in p:
+            commodity.name = p['cmdty:name']
+        if 'cmdty:xcode' in p:
+            commodity.xcode = p['cmdty:xcode']
+
+        book.commodities.append(commodity)
+
+    # Not implemented:
+    # - act:description
+    # - act:slots
+    # - act:commodity-scu
+    def add_account(elem):
+        taglist = [
+            'act:name',
+            'act:id',   # guid
+            'act:type'  # actype
+        ]
+        p = {}
+        for e in list(elem):
+            uri, tag = e.tag[1:].split("}")
+            tag = ns_map[uri] + ':' + tag
+            if tag in taglist:
+                p[tag] = e.text
+            elif tag == 'act:commodity':
+                c_space = e.find('cmdty:space', ns_map).text
+                c_id = e.find('cmdty:id', ns_map).text
+                commodity = commoditiesdict[(c_space, c_id)]
+            elif tag == 'act:parent':
+                parent = e.text
+
+        account = Account(p['act:name'], p['act:id'], p['act:type'])
+        if p['act:type'] != 'ROOT':
+            account.commodity = commodity
+            parentguid[p['act:id']] = parent
+
+        accountsdict[p['act:id']] = account
+        book.accounts.append(account)
+
+    # Implemented:
+    # - trn:id
+    # - trn:currency
+    # - trn:date-posted
+    # - trn:date-entered
+    # - trn:description
+    # - trn:splits / trn:split
+    # - trn:slots
+    def add_transaction(elem):
+
+        for e in list(elem):
+            uri, tag = e.tag[1:].split("}")
+            tag = ns_map[uri] + ':' + tag
+            if tag == 'trn:id':
+                pass
+            elif tag == 'trn:currency':
+                c_space = e.find('cmdty:space', ns_map).text
+                c_symbol = e.find('cmdty:id', ns_map).text
+                commodity = commoditiesdict[(c_space, c_symbol)]
+            elif tag == 'trn:date-posted':
+                date = parse_date(elem.find('ts:date', ns_map).text)
+            elif tag == 'trn:date-entered':
+                date = parse_date(elem.find('ts:date', ns_map).text)
+
+        guid = elem.find('trn:id', ns_map).text
+        c_space = elem.find('./trn:currency/cmdty:space', ns_map).text
+        c_symbol = elem.find('./trn:currency/cmdty:id', ns_map).text
+        currency = commoditiesdict[(c_space, c_symbol)]
+        date = parse_date(elem.find('./trn:date-posted/ts:date', ns_map).text)
+        date_entered = parse_date(elem.find('./trn:date-entered/ts:date', ns_map).text)
+        description = elem.find('trn:description', ns_map).text
+
+        # rarely used
+        # num = tree.find(trn + "num")
+        # if num is not None:
+        #    num = num.text
+
+        # slots = _slots_from_tree(tree.find(trn + "slots"))
+
+        # for subtree in tree.findall(trn + "splits/" + trn + "split"):
+        #    split = _split_from_tree(subtree, accountdict, transaction)
+        #    transaction.splits.append(split)
+
+        transactions.append(Transaction(guid=guid,
+                                        currency=currency,
+                                        date=date,
+                                        date_entered=date_entered,
+                                        description=description))
+
+    tag_map = {
+        'gnc:commodity': add_commodity,
+        'gnc:account': add_account,
+        'gnc:transaction': add_transaction
+    }
+
+    book = None
+    while not book:
+        action, elem = next(xml_iter)
+        uri, tag = elem.tag[1:].split("}")
+        tag = ns_map[uri] + ':' + tag
+        if tag == 'book:id' and action == 'end':
+            book = Book(tree=None, guid=elem.text)
+
+    level = 0
+    while level >=0:
+        action, elem = next(xml_iter)
+        if action == 'start':
+            level += 1
+
+        elif action == 'end':
+            if level <= 1:
+                uri, tag = elem.tag[1:].split("}")
+                tag = ns_map[uri] + ':' + tag
+                try:
+                    tag_map[tag](elem)
+                except KeyError:
+                    pass
+                elem.clear()
+            level -= 1
+
+
+def _iterparse(fobj):
+    events = ['start-ns', 'start', 'end']
+    xml_iter = ElementTree.iterparse(fobj, events=events)
+
+    # Read namespaces first
+    ns_map = {}
+    action, elem = next(xml_iter)
+    while action == 'start-ns':
+        prefix, uri = elem
+        ns_map[prefix] = uri
+        ns_map[uri] = prefix
+        action, elem = next(xml_iter)
+
+    # Sanity check on root level
+    if elem.tag != 'gnc-v2':
+        raise ValueError("Not a valid GNU Cash v2 XML file")
+
+    # Find start from book
+    tag = None
+    while not (tag == 'gnc:book' and action == 'start'):
+        action, elem = next(xml_iter)
+        uri, tag = elem.tag[1:].split("}")
+        tag = ns_map[uri] + ':' + tag
+
+    return _book_from_iter(xml_iter, ns_map)
 
 # Implemented:
 # - book:id
@@ -336,8 +515,8 @@ def _book_from_tree(tree):
     # - cmdty:fraction => optional, e.g. "1"
     def _commodity_from_tree(tree):
         space = tree.find('{http://www.gnucash.org/XML/cmdty}space').text
-        symbol = tree.find('{http://www.gnucash.org/XML/cmdty}id').text
-        commodity = Commodity(space=space, symbol=symbol)
+        id = tree.find('{http://www.gnucash.org/XML/cmdty}id').text
+        commodity = Commodity(space=space, id=id)
         try:
             commodity.name = tree.find('{http://www.gnucash.org/XML/cmdty}name').text
         except AttributeError:
@@ -378,7 +557,7 @@ def _book_from_tree(tree):
         currency_id = tree.find(price + "currency/" + cmdty + "id").text
         # pricedb may contain currencies not part of the commodities root list
         currency = commoditydict.setdefault((currency_space, currency_id),
-                                            Commodity(space=currency_space, symbol=currency_id))
+                                            Commodity(space=currency_space, id=currency_id))
 
         commodity_space = tree.find(price + "commodity/" + cmdty + "space").text
         commodity_id = tree.find(price + "commodity/" + cmdty + "id").text
