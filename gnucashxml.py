@@ -390,27 +390,13 @@ def _book_from_iter(xml_iter, ns_map):
     # - trn:slots
     def add_transaction(elem):
 
-        for e in list(elem):
-            uri, tag = e.tag[1:].split("}")
-            tag = ns_map[uri] + ':' + tag
-            if tag == 'trn:id':
-                pass
-            elif tag == 'trn:currency':
-                c_space = e.find('cmdty:space', ns_map).text
-                c_symbol = e.find('cmdty:id', ns_map).text
-                commodity = commoditiesdict[(c_space, c_symbol)]
-            elif tag == 'trn:date-posted':
-                date = parse_date(elem.find('ts:date', ns_map).text)
-            elif tag == 'trn:date-entered':
-                date = parse_date(elem.find('ts:date', ns_map).text)
-
-        guid = elem.find('trn:id', ns_map).text
+        guid = elem.find('./trn:id', ns_map).text
         c_space = elem.find('./trn:currency/cmdty:space', ns_map).text
         c_symbol = elem.find('./trn:currency/cmdty:id', ns_map).text
         currency = commoditiesdict[(c_space, c_symbol)]
-        date = parse_date(elem.find('./trn:date-posted/ts:date', ns_map).text)
+        date_posted = parse_date(elem.find('./trn:date-posted/ts:date', ns_map).text)
         date_entered = parse_date(elem.find('./trn:date-entered/ts:date', ns_map).text)
-        description = elem.find('trn:description', ns_map).text
+        description = elem.find('./trn:description', ns_map).text
 
         # rarely used
         # num = tree.find(trn + "num")
@@ -425,7 +411,7 @@ def _book_from_iter(xml_iter, ns_map):
 
         transactions.append(Transaction(guid=guid,
                                         currency=currency,
-                                        date=date,
+                                        date=date_posted,
                                         date_entered=date_entered,
                                         description=description))
 
@@ -444,7 +430,7 @@ def _book_from_iter(xml_iter, ns_map):
             book = Book(tree=None, guid=elem.text)
 
     level = 0
-    while level >=0:
+    while level >= 0:
         action, elem = next(xml_iter)
         if action == 'start':
             level += 1
@@ -465,27 +451,31 @@ def _iterparse(fobj):
     events = ['start-ns', 'start', 'end']
     xml_iter = ElementTree.iterparse(fobj, events=events)
 
-    # Read namespaces first
-    ns_map = {}
-    action, elem = next(xml_iter)
-    while action == 'start-ns':
-        prefix, uri = elem
-        ns_map[prefix] = uri
-        ns_map[uri] = prefix
-        action, elem = next(xml_iter)
+    context = iter(xml_iter)
 
+    # Open root element
+    # Read namespaces first
+    ns = {}
+    event, elem = next(xml_iter)
+    while event == 'start-ns':
+        prefix, uri = elem
+        ns[prefix] = uri
+        ns[uri] = prefix
+        event, elem = next(xml_iter)
+
+    # event = 'start'
     # Sanity check on root level
     if elem.tag != 'gnc-v2':
         raise ValueError("Not a valid GNU Cash v2 XML file")
 
-    # Find start from book
+    # Find start of element gnc:book
     tag = None
-    while not (tag == 'gnc:book' and action == 'start'):
-        action, elem = next(xml_iter)
+    while not (tag == 'gnc:book' and event == 'start'):
+        event, elem = next(xml_iter)
         uri, tag = elem.tag[1:].split("}")
-        tag = ns_map[uri] + ':' + tag
+        tag = ns[uri] + ':' + tag
 
-    return _book_from_iter(xml_iter, ns_map)
+    return _book_from_iter(xml_iter, ns)
 
 # Implemented:
 # - book:id
