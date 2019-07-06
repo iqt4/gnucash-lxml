@@ -146,7 +146,7 @@ class Account(object):
             return ''
 
     def __repr__(self):
-        return "<Account '{}[{}]' {}...>".format(self.name, self.commodity.id, self.guid[:10])
+        return "<Account '{}[{}]' {}...>".format(self.name, self.commodity.symbol, self.guid[:10])
 
     def walk(self):
         """
@@ -315,14 +315,19 @@ def _iterparse(fobj):
     def _add_guid(elem):
         book.guid = elem.text
 
-    def _add_commodity(c_tree):
-        c_space = c_tree.find('./cmdty:space', ns).text
-        c_id = c_tree.find('./cmdty:id', ns).text
+    def _add_commodity(cmdty_tree):
+        c_space = cmdty_tree.find('./cmdty:space', ns).text
+        c_id = cmdty_tree.find('./cmdty:id', ns).text
         commodity = Commodity(c_space, c_id)
-        commodity.name = c_tree.find('./cmdty:name', ns)
-        e_xcode = c_tree.find('./cmdty:xcode', ns)
-        if e_xcode is not None:
-            commodity.xcode = e_xcode.text
+        try:
+            commodity.name = cmdty_tree.find('./cmdty:name', ns).text
+        except AttributeError:
+            pass
+
+        try:
+            commodity.xcode = cmdty_tree.find('./cmdty:xcode', ns).text
+        except AttributeError:
+            pass
 
         commoditiesdict[(c_space, c_id)] = commodity
         book.commodities.append(commodity)
@@ -334,10 +339,10 @@ def _iterparse(fobj):
 
         account = Account(act_name, act_id, act_type)
 
-        c_tree = a_tree.find('./act:cmdty', ns)
-        if c_tree:
-            c_space = c_tree.find('./cmdty:space', ns).text
-            c_id = c_tree.find('./cmdty:id', ns).text
+        cmdty_tree = a_tree.find('./act:commodity', ns)
+        if cmdty_tree is not None:
+            c_space = cmdty_tree.find('./cmdty:space', ns).text
+            c_id = cmdty_tree.find('./cmdty:id', ns).text
             account.commodity = commoditiesdict[(c_space, c_id)]
 
         if act_type != 'ROOT':
@@ -398,11 +403,15 @@ def _iterparse(fobj):
             split = _get_split_from_trn(split_tree, transaction)
             transaction.splits.append(split)
 
+    def _count_data(elem):
+        count_data[elem.get('{http://www.gnucash.org/XML/cd}type')] = int(elem.text)
+
     tag_function = {
         '{http://www.gnucash.org/XML/book}id': _add_guid,
         '{http://www.gnucash.org/XML/gnc}commodity': _add_commodity,
         '{http://www.gnucash.org/XML/gnc}account': _add_account,
-        '{http://www.gnucash.org/XML/gnc}transaction': _add_transaction
+        '{http://www.gnucash.org/XML/gnc}transaction': _add_transaction,
+        '{http://www.gnucash.org/XML/gnc}count-data': _count_data
     }
 
     events = ['start-ns', 'start', 'end']
@@ -411,7 +420,7 @@ def _iterparse(fobj):
 
     commoditiesdict = {}
     accountsdict = {}
-    parentguid = {}
+    count_data = {}
 
     ns = {}
     path = []
@@ -438,14 +447,14 @@ def _iterparse(fobj):
             elif path[-1] == '{http://www.gnucash.org/XML/gnc}count-data':
                 if elem.attrib['{http://www.gnucash.org/XML/cd}type'] == "book" and elem.text != "1":
                     raise ValueError("Only 1 book per XML file allowed")
-                else:
-                    pass  # TODO count elements of book
 
             path.pop()
 
         else:  # event = 'start-ns'
             prefix, uri = elem
             ns[prefix] = uri
+
+    # TODO count elements of book and verify
 
     return book
 
