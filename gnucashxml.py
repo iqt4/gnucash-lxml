@@ -24,9 +24,10 @@ import gzip
 from dateutil.parser import parse as parse_date
 
 try:
-    from lxml import etree
+    import lxml.etree as ElementTree
 except ImportError:
-    import xml.etree.ElementTree as etree
+    from xml.etree import ElementTree
+from xml.etree.ElementTree import ParseError
 
 __version__ = "1.1"
 
@@ -100,9 +101,6 @@ class Commodity(object):
     Consists of a name (or id) and a space (namespace).
     """
 
-    # Not implemented
-    # - fraction
-    # - slots
     def __init__(self, space, symbol, name=None, xcode=None):
         self.space = space
         self.symbol = symbol
@@ -113,7 +111,7 @@ class Commodity(object):
         return self.name
 
     def __repr__(self):
-        return "<Commodity {}:{}>".format(self.space, self.symbol)
+        return "<Commodity {}:{}>".format(self.space, self.name)
 
 
 class Account(object):
@@ -146,7 +144,7 @@ class Account(object):
             return ''
 
     def __repr__(self):
-        return "<Account '{}[{}]' {}...>".format(self.name, self.commodity.symbol, self.guid[:10])
+        return "<Account '{}[{}]' {}...>".format(self.name, self.commodity, self.guid[:10])
 
     def walk(self):
         """
@@ -285,10 +283,10 @@ def from_filename(filename):
     """Parse a GNU Cash file and return a Book object."""
     try:
         # try opening with gzip decompression
-        return _iterparse(gzip.open(filename, "rb"))
+        return parse(gzip.open(filename, "rb"))
     except IOError:
         # try opening without decompression
-        return _iterparse(open(filename, "rb"))
+        return parse(open(filename, "rb"))
 
 
 # Implemented:
@@ -300,7 +298,7 @@ def from_filename(filename):
 def parse(fobj):
     """Parse GNU Cash XML data from a file object and return a Book object."""
     try:
-        tree = lxml.etree.parse(fobj)
+        tree = ElementTree.parse(fobj)
     except ParseError:
         raise ValueError("File stream was not a valid GNU Cash v2 XML file")
 
@@ -309,154 +307,6 @@ def parse(fobj):
         raise ValueError("File stream was not a valid GNU Cash v2 XML file")
     return _book_from_tree(root.find("{http://www.gnucash.org/XML/gnc}book"))
 
-
-def _iterparse(fobj):
-
-    def _add_guid(elem):
-        book.guid = elem.text
-
-    def _add_commodity(cmdty_tree):
-        c_space = cmdty_tree.find('./cmdty:space', ns).text
-        c_id = cmdty_tree.find('./cmdty:id', ns).text
-        commodity = Commodity(c_space, c_id)
-        try:
-            commodity.name = cmdty_tree.find('./cmdty:name', ns).text
-        except AttributeError:
-            pass
-
-        try:
-            commodity.xcode = cmdty_tree.find('./cmdty:xcode', ns).text
-        except AttributeError:
-            pass
-
-        commoditiesdict[(c_space, c_id)] = commodity
-        book.commodities.append(commodity)
-
-    def _add_account(a_tree):
-        act_name = a_tree.find('./act:name', ns).text
-        act_id = a_tree.find('./act:id', ns).text
-        act_type = a_tree.find('./act:type', ns).text
-
-        account = Account(act_name, act_id, act_type)
-
-        cmdty_tree = a_tree.find('./act:commodity', ns)
-        if cmdty_tree is not None:
-            c_space = cmdty_tree.find('./cmdty:space', ns).text
-            c_id = cmdty_tree.find('./cmdty:id', ns).text
-            account.commodity = commoditiesdict[(c_space, c_id)]
-
-        if act_type != 'ROOT':
-            act_parent = a_tree.find('./act:parent', ns).text
-            account.parent = accountsdict[act_parent]
-
-        accountsdict[act_id] = account
-        book.accounts.append(account)
-
-    def _get_split_from_trn(split_tree, transaction):
-        guid = split_tree.find('./split:id', ns).text
-        memo = split_tree.find('./split:memo', ns)
-        if memo is not None:
-            memo = memo.text
-        reconciled_state = split_tree.find('./split:reconciled-state', ns).text
-        reconcile_date = split_tree.find('./split:reconcile-date/ts:date', ns)
-        if reconcile_date is not None:
-            reconcile_date = parse_date(reconcile_date.text)
-        value = _parse_number(split_tree.find('./split:value', ns).text)
-        quantity = _parse_number(split_tree.find('./split:quantity', ns).text)
-        account_guid = split_tree.find('./split:account', ns).text
-        account = accountsdict[account_guid]
-        # slots = _slots_from_tree(split_tree.find(split + "slots"))
-        action = split_tree.find('./split:action', ns)
-        if action is not None:
-            action = action.text
-
-        split = Split(guid=guid,
-                      memo=memo,
-                      reconciled_state=reconciled_state,
-                      reconcile_date=reconcile_date,
-                      value=value,
-                      quantity=quantity,
-                      account=account,
-                      transaction=transaction,
-                      action=action)
-
-        account.splits.append(split)
-        return split
-
-    def _add_transaction(trn_tree):
-        guid = trn_tree.find('./trn:id', ns).text
-        c_space = trn_tree.find('./trn:currency/cmdty:space', ns).text
-        c_symbol = trn_tree.find('./trn:currency/cmdty:id', ns).text
-        currency = commoditiesdict[(c_space, c_symbol)]
-        date_posted = parse_date(trn_tree.find('./trn:date-posted/ts:date', ns).text)
-        date_entered = parse_date(trn_tree.find('./trn:date-entered/ts:date', ns).text)
-        description = trn_tree.find('./trn:description', ns).text
-
-        # slots = _slots_from_tree(tree.find(trn + "slots"))
-        transaction = Transaction(guid=guid,
-                                  currency=currency,
-                                  date=date_posted,
-                                  date_entered=date_entered,
-                                  description=description)
-
-        for split_tree in trn_tree.findall('trn:splits/trn:split', ns):
-            split = _get_split_from_trn(split_tree, transaction)
-            transaction.splits.append(split)
-
-    def _count_data(elem):
-        count_data[elem.get('{http://www.gnucash.org/XML/cd}type')] = int(elem.text)
-
-    tag_function = {
-        '{http://www.gnucash.org/XML/book}id': _add_guid,
-        '{http://www.gnucash.org/XML/gnc}commodity': _add_commodity,
-        '{http://www.gnucash.org/XML/gnc}account': _add_account,
-        '{http://www.gnucash.org/XML/gnc}transaction': _add_transaction,
-        '{http://www.gnucash.org/XML/gnc}count-data': _count_data
-    }
-
-    events = ['start-ns', 'start', 'end']
-    xml_iter = etree.iterparse(fobj, events=events)
-    context = iter(xml_iter)
-
-    commoditiesdict = {}
-    accountsdict = {}
-    count_data = {}
-
-    ns = {}
-    path = []
-    book = None
-
-    for event, elem in context:
-        if event == 'start':
-            path.append(elem.tag)
-
-            if len(path) == 1 and path[-1] != 'gnc-v2':
-                raise ValueError("Not a valid GNU Cash v2 XML file")
-            elif len(path) == 2 and path[-1] == '{http://www.gnucash.org/XML/gnc}book':
-                book = Book(tree=None, guid=None)
-
-        elif event == 'end':
-            if len(path) == 3 and path[-2] == '{http://www.gnucash.org/XML/gnc}book':
-                print(path[-1], event, elem.tag)
-                try:
-                    tag_function[elem.tag](elem)
-                except KeyError:
-                    pass
-                elem.clear()
-
-            elif path[-1] == '{http://www.gnucash.org/XML/gnc}count-data':
-                if elem.attrib['{http://www.gnucash.org/XML/cd}type'] == "book" and elem.text != "1":
-                    raise ValueError("Only 1 book per XML file allowed")
-
-            path.pop()
-
-        else:  # event = 'start-ns'
-            prefix, uri = elem
-            ns[prefix] = uri
-
-    # TODO count elements of book and verify
-
-    return book
 
 # Implemented:
 # - book:id
@@ -486,8 +336,8 @@ def _book_from_tree(tree):
     # - cmdty:fraction => optional, e.g. "1"
     def _commodity_from_tree(tree):
         space = tree.find('{http://www.gnucash.org/XML/cmdty}space').text
-        id = tree.find('{http://www.gnucash.org/XML/cmdty}id').text
-        commodity = Commodity(space=space, id=id)
+        symbol = tree.find('{http://www.gnucash.org/XML/cmdty}id').text
+        commodity = Commodity(space=space, symbol=symbol)
         try:
             commodity.name = tree.find('{http://www.gnucash.org/XML/cmdty}name').text
         except AttributeError:
@@ -528,7 +378,7 @@ def _book_from_tree(tree):
         currency_id = tree.find(price + "currency/" + cmdty + "id").text
         # pricedb may contain currencies not part of the commodities root list
         currency = commoditydict.setdefault((currency_space, currency_id),
-                                            Commodity(space=currency_space, id=currency_id))
+                                            Commodity(space=currency_space, symbol=currency_id))
 
         commodity_space = tree.find(price + "commodity/" + cmdty + "space").text
         commodity_id = tree.find(price + "commodity/" + cmdty + "id").text
