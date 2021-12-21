@@ -19,589 +19,434 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+from abc import ABC, abstractmethod
 import decimal
-import gzip
 from dateutil.parser import parse as parse_date
+from lxml import etree
 
-try:
-    import lxml.etree as ElementTree
-except ImportError:
-    from xml.etree import ElementTree
-from xml.etree.ElementTree import ParseError
-
-__version__ = "1.1"
+__version__ = "1.90"
 
 
-class Book(object):
+def load(source):
+    """
+    Load GnuCash XML from <source> and return Book.
+
+    The ``source`` can be any of the following:
+    - a file name/path
+    - a file object
+    - a file-like object
+    - a URL using the HTTP or FTP protocol
+    <gnc:book/>
+    """
+    # Not implemented:
+    # - gnc:count-data
+
+    parser = get_xml_parser()
+    root = etree.parse(source, parser=parser).getroot()
+    return root.find('gnc:book', root.nsmap)
+
+
+def get_xml_parser():
+    lookup = etree.ElementNamespaceClassLookup()
+    gnc_element = lookup.get_namespace('http://www.gnucash.org/XML/gnc')
+    gnc_element['book'] = Book
+    gnc_element['commodity'] = Commodity
+    gnc_element['account'] = Account
+    gnc_element['transaction'] = Transaction
+    gnc_element['price'] = Price
+    trn_element = lookup.get_namespace('http://www.gnucash.org/XML/trn')
+    trn_element['split'] = Split
+    no_namespace = lookup.get_namespace(None)
+    no_namespace['slot'] = Slot
+
+    parser = etree.XMLParser()
+    parser.set_element_class_lookup(lookup)
+    return parser
+
+
+class SlotElementLookup(etree.CustomElementClassLookup):
+    def lookup(self, node_type, document, namespace, name):
+        if node_type == 'element' and namespace is None and name == 'slot':
+            return Slot
+        else:
+            return None  # pass on to (default) fallback
+
+
+class QueryBase(ABC):
+    def __get__(self, obj, obj_type=None):
+        return self.query_function(obj)
+
+    @abstractmethod
+    def query_function(self, obj):
+        pass
+
+
+class GetElement(QueryBase):
+    def __init__(self, path):
+        self.path = path
+
+    def query_function(self, element: etree.ElementBase):
+        return element.find(self.path, namespaces=element.nsmap)
+
+
+class GetText(QueryBase):
+    def __init__(self, path):
+        self.path = path
+
+    def query_function(self, element: etree.ElementBase):
+        return element.findtext(self.path, namespaces=element.nsmap)
+
+
+class GetDate(QueryBase):
+    def __init__(self, path):
+        self.path = path
+
+    def query_function(self, element: etree.ElementBase):
+        date_str = element.findtext(self.path, namespaces=element.nsmap)
+        if date_str is not None:
+            return parse_date(date_str)
+
+
+class GetNumber(QueryBase):
+    def __init__(self, path):
+        self.path = path
+
+    def query_function(self, element: etree.ElementBase):
+        number_str = element.findtext(self.path, namespaces=element.nsmap)
+        numerator, denominator = number_str.split("/")
+        return decimal.Decimal(numerator) / decimal.Decimal(denominator)
+
+
+class GetValue(QueryBase):
+    def __init__(self, path):
+        self.path = path
+
+    def value_lookup(self, e: etree.ElementBase):
+        value_str = e.text
+        value_type = e.get('type', default='string')
+        if value_type in ('integer', 'double'):
+            return int(value_str)
+        elif value_type == 'numeric':
+            numerator, denominator = value_str.split("/")
+            return decimal.Decimal(numerator) / decimal.Decimal(denominator)
+        elif value_type in ('string', 'guid'):
+            return value_str
+        elif value_type == 'gdate':
+            return parse_date(e.findtext("gdate"))
+        elif value_type == 'timespec':
+            return parse_date(e.findtext('ts:date'))
+        elif value_type == 'frame':
+            return list(e)
+        elif value_type == 'list':
+            return [self.value_lookup(list_e) for list_e in e]
+        else:
+            raise RuntimeError(f"Unknown slot type {value_type}")
+
+    def query_function(self, element: etree.ElementBase):
+        e: etree.ElementBase = element.find(self.path, element.nsmap)
+        return self.value_lookup(e)
+
+
+class GetCommodity(QueryBase):
+    """
+    Return Commodity instance from path to
+    """
+    # Map between tuple of space.symbol and Commodity instance
+    _commodity_index = {}
+
+    def __init__(self, path):
+        self.path = path
+
+    def query_function(self, element: etree.ElementBase):
+        e = element.find(self.path, element.nsmap)
+        if e is not None:
+            c_space = e.findtext('cmdty:space', namespaces=e.nsmap)
+            c_symbol = e.findtext('cmdty:id', namespaces=e.nsmap)
+            return self._commodity_index.get((c_space, c_symbol))
+
+    @classmethod
+    def register(cls, obj):
+        cls._commodity_index.setdefault((obj.space, obj.symbol), obj)
+
+
+class GetAccount(QueryBase):
+    """
+    Return Account instance by GUID
+    """
+    # Map between GUID and Account instance
+    _account_index = {}
+
+    def __init__(self, path):
+        self.path = path
+
+    def query_function(self, act: Account):
+        e: etree.ElementBase = act.find(self.path, act.nsmap)
+        if e is not None and e.get("type") == "guid":
+            # xpath is slow
+            # expr = '/gnc-v2/gnc:book/gnc:account/act:id[text() = $guid]/parent::*'
+            # return e.xpath(expr, guid=e.text, namespaces=e.nsmap)[0]
+            return self._account_index.get(e.text)
+
+    @classmethod
+    def register(cls, obj):
+        cls._account_index.setdefault(obj.guid, obj)
+
+
+class Book(etree.ElementBase):
     """
     A book is the main container for GNU Cash data.
 
     It doesn't really do anything at all by itself, except to have
     a reference to the accounts, transactions, prices, and commodities.
+    <gnc:book/>
     """
 
-    def __init__(self, tree, guid, prices=None, transactions=None, root_account=None,
-                 accounts=None, commodities=None, slots=None):
-        self.tree = tree
-        self.guid = guid
-        self.prices = prices
-        self.transactions = transactions or []
-        self.root_account = root_account
-        self.accounts = accounts or []
-        self.commodities = commodities or []
-        self.slots = slots or {}
+    # Not implemented:
+    # - gnc:schedxaction
+    # - gnc:template-transactions
+    # - gnc:count-data
+
+    guid = GetText('book:id')
+    prices = GetElement('gnc:pricedb')
+    slots = GetElement('book:slots')
+
+    def _init(self):
+        self.findall('gnc:commodity', self.nsmap)  # Initialize the Commodity classes
+        self.findall('gnc:account', self.nsmap)  # Initialize the Account classes
 
     def __repr__(self):
-        return "<Book {}>".format(self.guid)
+        return f"<Book {self.guid}>"
+
+    @property
+    def commodities(self):
+        return self.iterfind('gnc:commodity', self.nsmap)
+
+    @property
+    def root_account(self):
+        return self.accounts[0]
+
+    @property
+    def accounts(self):
+        return list(self.iterfind('gnc:account', self.nsmap))
+
+    @property
+    def transactions(self):
+        return self.iterfind('gnc:transaction', self.nsmap)
 
     def walk(self):
         return self.root_account.walk()
 
-    def find_account(self, name):
-        for account, children, splits in self.walk():
-            if account.name == name:
-                return account
-
-    def find_guid(self, guid):
-        for item in self.accounts + self.transactions:
-            if item.guid == guid:
-                return item
-
-    def ledger(self):
-        outp = []
-
-        for comm in self.commodities:
-            outp.append('commodity {}'.format(comm.name))
-            outp.append('\tnamespace {}'.format(comm.space))
-            outp.append('')
-
-        for account in self.accounts:
-            outp.append('account {}'.format(account.fullname()))
-            if account.description:
-                outp.append('\tnote {}'.format(account.description))
-            outp.append('\tcheck commodity == "{}"'.format(account.commodity))
-            outp.append('')
-
-        for trn in sorted(self.transactions):
-            outp.append('{:%Y/%m/%d} * {}'.format(trn.date, trn.description))
-            for spl in trn.splits:
-                outp.append('\t{:50} {:12.2f} {} {}'.format(spl.account.fullname(),
-                                                            spl.value,
-                                                            spl.account.commodity,
-                                                            '; ' + spl.memo if spl.memo else ''))
-            outp.append('')
-
-        return '\n'.join(outp)
+#     def find_account(self, name):
+#         for account, children, splits in self.walk():
+#             if account.name == name:
+#                 return account
+#
+#     def find_guid(self, guid):
+#         for item in self.accounts + self.transactions:
+#             if item.guid == guid:
+#                 return item
 
 
-class Commodity(object):
+class Commodity(etree.ElementBase):
     """
     A commodity is something that's stored in GNU Cash accounts.
-
-    Consists of a name (or id) and a space (namespace).
+    The key consists of a namespace (space) and a symbol (id).
     """
+    # Not implemented:
+    # - cmdty:get_quotes => unknown, empty, optional
+    # - cmdty:quote_tz => unknown, empty, optional
+    # - cmdty:source => text, optional, e.g. "currency"
+    # - cmdty:fraction => optional, e.g. "1"
 
-    def __init__(self, space, symbol, name=None, xcode=None):
-        self.space = space
-        self.symbol = symbol
-        self.name = name
-        self.xcode = xcode
+    space = GetText('./cmdty:space')
+    symbol = GetText('./cmdty:id')
+    name = GetText('./cmdty:name')
+    xcode = GetText('./cmdty:xcode')
 
-    def __str__(self):
-        return self.name
+    def _init(self):
+        GetCommodity.register(self)
 
     def __repr__(self):
-        return "<Commodity {}:{}>".format(self.space, self.name)
+        return f"<Commodity {self.space}:{self.symbol}>"
 
 
-class Account(object):
+class Price(etree.ElementBase):
+    """
+    A price is GnuCash record of the price of a commodity against a currency
+    Consists of date, currency, commodity,  value
+    <gnc:pricedb/>
+    """
+
+    guid = GetText('price:id')
+    commodity = GetCommodity('price:commodity')
+    currency = GetCommodity('price:currency)')
+    date = GetDate('price:time/ts:date')
+    value = GetNumber('price:value')
+
+    def __repr__(self):
+        return f"<Price {self.date:%Y/%m/%d}: {self.value} {self.commodity}/{self.currency} >"
+
+
+#    def __lt__(self, other):
+#        # For sorted() only
+#        if isinstance(other, Price):
+#            return self.date < other.date
+#        else:
+#            False
+
+
+class Account(etree.ElementBase):
     """
     An account is part of a tree structure of accounts and contains splits.
+    <gnc:account/>
     """
 
-    def __init__(self, name, guid, actype, parent=None,
-                 commodity=None, commodity_scu=None,
-                 description=None, slots=None):
-        self.name = name
-        self.guid = guid
-        self.actype = actype
-        self.description = description
-        self.parent = parent
-        self.children = []
-        self.commodity = commodity
-        self.commodity_scu = commodity_scu
-        self.splits = []
-        self.slots = slots or {}
+    name = GetText('act:name')
+    guid = GetText('act:id')
+    type = GetText('act:type')
+    description = GetText('act:description')
+    commodity_scu = GetText('act:commodity-scu')
+    commodity = GetCommodity('act:commodity')
+    parent_guid = GetText('act:parent')
+    parent = GetAccount('act:parent')
+    slots = GetElement('act:slots')
 
+    def _init(self):
+        GetAccount.register(self)
+
+    def __repr__(self):
+        return f'<Account {self.name}>'
+
+    @property
+    def children(self):
+        expr = '/gnc-v2/gnc:book/gnc:account/act:parent[text() = $guid]/parent::*'
+        return self.xpath(expr, guid=self.guid, namespaces=self.nsmap)
+
+    @property
+    def splits(self):
+        expr = '/gnc-v2/gnc:book/gnc:transaction/trn:splits/trn:split/split:account[text() = $guid]/parent::*'
+        return self.xpath(expr, guid=self.guid, namespaces=self.nsmap)
+
+    @property
     def fullname(self):
-        if self.parent:
-            pfn = self.parent.fullname()
+        if self.parent is not None:
+            pfn = self.parent.fullname
             if pfn:
-                return '{}:{}'.format(pfn, self.name)
+                return f'{pfn}:{self.name}'
             else:
                 return self.name
         else:
             return ''
 
-    def __repr__(self):
-        return "<Account '{}[{}]' {}...>".format(self.name, self.commodity, self.guid[:10])
-
     def walk(self):
         """
         Generate splits in this account tree by walking the tree.
 
-        For each account, it yields a 3-tuple (account, subaccounts, splits).
+        For each account, it yields a 3-tuple (account, sub_accounts, splits).
 
-        You can modify the list of subaccounts, but should not modify
+        You can modify the list of sub_accounts, but should not modify
         the list of splits.
         """
         accounts = [self]
         while accounts:
             acc, accounts = accounts[0], accounts[1:]
             children = list(acc.children)
-            yield (acc, children, acc.splits)
+            yield acc, children, acc.splits
             accounts.extend(children)
+    #
+    # def find_account(self, name):
+    #     for account, children, splits in self.walk():
+    #         if account.name == name:
+    #             return account
+    #
+    # def get_all_splits(self):
+    #     split_list = []
+    #     for account, children, splits in self.walk():
+    #         split_list.extend(splits)
+    #     return sorted(split_list)
+    #
+    # def __lt__(self, other):
+    #     # For sorted() only
+    #     if isinstance(other, Account):
+    #         return self.fullname() < other.fullname()
+    #     else:
+    #         False
 
-    def find_account(self, name):
-        for account, children, splits in self.walk():
-            if account.name == name:
-                return account
 
-    def get_all_splits(self):
-        split_list = []
-        for account, children, splits in self.walk():
-            split_list.extend(splits)
-        return sorted(split_list)
-
-    def __lt__(self, other):
-        # For sorted() only
-        if isinstance(other, Account):
-            return self.fullname() < other.fullname()
-        else:
-            False
-
-
-class Transaction(object):
+class Transaction(etree.ElementBase):
     """
     A transaction is a balanced group of splits.
+    <gnc:transaction/>
     """
 
-    def __init__(self, guid=None, currency=None,
-                 date=None, date_entered=None,
-                 description=None, splits=None,
-                 num=None, slots=None):
-        self.guid = guid
-        self.currency = currency
-        self.date = date
-        self.post_date = date  # for compatibility with piecash
-        self.date_entered = date_entered
-        self.description = description
-        self.num = num or None
-        self.splits = splits or []
-        self.slots = slots or {}
+    guid = GetText('trn:id')
+    currency = GetCommodity('trn:currency')
+    num = GetText('trn:num')
+    date = GetDate('trn:date-posted/ts:date')
+    date_entered = GetDate('trn:date-entered/ts:date')
+    description = GetText('trn:description')
+    splits = GetElement('trn:splits')
+    slots = GetElement('trn:slots')
 
     def __repr__(self):
-        return "<Transaction on {} '{}' {}...>".format(
-            self.date, self.description, self.guid[:6])
-
-    def __lt__(self, other):
-        # For sorted() only
-        if isinstance(other, Transaction):
-            return self.date < other.date
-        else:
-            False
+        return f"<Transaction on {self.date} {self.description}>"
 
 
-class Split(object):
+#     def __lt__(self, other):
+#         # For sorted() only
+#         if isinstance(other, Transaction):
+#             return self.date < other.date
+#         else:
+#             False
+
+
+class Split(etree.ElementBase):
     """
     A split is one entry in a transaction.
+    <trn:split/>
     """
 
-    def __init__(self, guid=None, memo=None,
-                 reconciled_state=None, reconcile_date=None, value=None,
-                 quantity=None, account=None, transaction=None, action=None,
-                 slots=None):
-        self.guid = guid
-        self.reconciled_state = reconciled_state
-        self.reconcile_date = reconcile_date
-        self.value = value
-        self.quantity = quantity
-        self.account = account
-        self.transaction = transaction
-        self.action = action
-        self.memo = memo
-        self.slots = slots
+    guid = GetText('split:id')
+    memo = GetText('split:memo')
+    reconciled_state = GetText('split:reconciled-state')
+    reconcile_date = GetDate('split:reconcile-date/ts:date')
+    value = GetNumber('split:value')
+    quantity = GetNumber('split:quantity')
+    account = GetAccount('split:account')
+    action = GetText('split:action')
+    slots = GetElement('split:slots')
+
+    @property
+    def transaction(self):
+        return self.getparent().getparent()
 
     def __repr__(self):
-        return "<Split {} '{}' {} {} {}...>".format(self.transaction.date,
-                                                    self.transaction.description,
-                                                    self.transaction.currency,
-                                                    self.value,
-                                                    self.guid[:6])
-
-    def __lt__(self, other):
-        # For sorted() only
-        if isinstance(other, Split):
-            return self.transaction < other.transaction
-        else:
-            False
+        return f"<Split {self.transaction.date} '{self.account}' {self.value}>"
 
 
-class Price(object):
+#     def __lt__(self, other):
+#         # For sorted() only
+#         if isinstance(other, Split):
+#             return self.transaction < other.transaction
+#         else:
+#             False
+
+
+class Slot(etree.ElementBase):
     """
-    A price is GNUCASH record of the price of a commodity against a currency
-    Consists of date, currency, commodity,  value
+    A slot contains all kind of information.
+    <slot/>
     """
-
-    def __init__(self, guid=None, commodity=None, currency=None,
-                 date=None, value=None):
-        self.guid = guid
-        self.commodity = commodity
-        self.currency = currency
-        self.date = date
-        self.value = value
+    key = GetText('slot:key')
+    value = GetValue('slot:value')
 
     def __repr__(self):
-        return "<Price {}... {:%Y/%m/%d}: {} {}/{} >".format(self.guid[:6],
-                                                             self.date,
-                                                             self.value,
-                                                             self.commodity,
-                                                             self.currency)
-
-    def __lt__(self, other):
-        # For sorted() only
-        if isinstance(other, Price):
-            return self.date < other.date
-        else:
-            False
+        return f"<Slot {self.key}:{self.value}'>"
 
 
-##################################################################
-# XML file parsing
+if __name__ == "__main__":
+    book = load("../Haushalt.gnucash.gz")
 
-def from_filename(filename):
-    """Parse a GNU Cash file and return a Book object."""
-    try:
-        # try opening with gzip decompression
-        return parse(gzip.open(filename, "rb"))
-    except IOError:
-        # try opening without decompression
-        return parse(open(filename, "rb"))
-
-
-# Implemented:
-# - gnc:book
-#
-# Not implemented:
-# - gnc:count-data
-#   - This seems to be primarily for integrity checks?
-def parse(fobj):
-    """Parse GNU Cash XML data from a file object and return a Book object."""
-    try:
-        tree = ElementTree.parse(fobj)
-    except ParseError:
-        raise ValueError("File stream was not a valid GNU Cash v2 XML file")
-
-    root = tree.getroot()
-    if root.tag != 'gnc-v2':
-        raise ValueError("File stream was not a valid GNU Cash v2 XML file")
-    return _book_from_tree(root.find("{http://www.gnucash.org/XML/gnc}book"))
-
-
-# Implemented:
-# - book:id
-# - book:slots
-# - gnc:commodity
-# - gnc:account
-# - gnc:transaction
-#
-# Not implemented:
-# - gnc:schedxaction
-# - gnc:template-transactions
-# - gnc:count-data
-#   - This seems to be primarily for integrity checks?
-def _book_from_tree(tree):
-    guid = tree.find('{http://www.gnucash.org/XML/book}id').text
-
-    # Implemented:
-    # - cmdty:space
-    # - cmdty:id => Symbol
-    # - cmdty:name
-    # - cmdty:xcode => optional, e.g. ISIN/WKN
-    #
-    # Not implemented:
-    # - cmdty:get_quotes => unknown, empty, optional
-    # - cmdty:quote_tz => unknown, empty, optional
-    # - cmdty:source => text, optional, e.g. "currency"
-    # - cmdty:fraction => optional, e.g. "1"
-    def _commodity_from_tree(tree):
-        space = tree.find('{http://www.gnucash.org/XML/cmdty}space').text
-        symbol = tree.find('{http://www.gnucash.org/XML/cmdty}id').text
-        commodity = Commodity(space=space, symbol=symbol)
-        try:
-            commodity.name = tree.find('{http://www.gnucash.org/XML/cmdty}name').text
-        except AttributeError:
-            pass
-
-        try:
-            commodity.xcode = tree.find('{http://www.gnucash.org/XML/cmdty}xcode').text
-        except AttributeError:
-            pass
-
-        return commodity
-
-    commodities = []  # This will store the Gnucash root list of commodities
-    for child in tree.findall('{http://www.gnucash.org/XML/gnc}commodity'):
-        commodity = _commodity_from_tree(child)
-        commodities.append(commodity)
-
-    # Map unique combination of namespace/symbol to instance of Commodity
-    commoditydict = {(c.space, c.symbol): c for c in commodities}
-
-    # Implemented:
-    # - price
-    # - price:guid
-    # - price:commodity
-    # - price:currency
-    # - price:date
-    # - price:value
-    def _price_from_tree(tree):
-        price = '{http://www.gnucash.org/XML/price}'
-        cmdty = '{http://www.gnucash.org/XML/cmdty}'
-        ts = "{http://www.gnucash.org/XML/ts}"
-
-        guid = tree.find(price + 'id').text
-        value = _parse_number(tree.find(price + 'value').text)
-        date = parse_date(tree.find(price + 'time/' + ts + 'date').text)
-
-        currency_space = tree.find(price + "currency/" + cmdty + "space").text
-        currency_id = tree.find(price + "currency/" + cmdty + "id").text
-        # pricedb may contain currencies not part of the commodities root list
-        currency = commoditydict.setdefault((currency_space, currency_id),
-                                            Commodity(space=currency_space, symbol=currency_id))
-
-        commodity_space = tree.find(price + "commodity/" + cmdty + "space").text
-        commodity_id = tree.find(price + "commodity/" + cmdty + "id").text
-        commodity = commoditydict[(commodity_space, commodity_id)]
-
-        return Price(guid=guid,
-                     commodity=commodity,
-                     date=date,
-                     value=value,
-                     currency=currency)
-
-    prices = []
-    t = tree.find('{http://www.gnucash.org/XML/gnc}pricedb')
-    if t is not None:
-        for child in t.findall('price'):
-            price = _price_from_tree(child)
-            prices.append(price)
-
-    root_account = None
-    accounts = []
-    accountdict = {}
-    parentdict = {}
-
-    for child in tree.findall('{http://www.gnucash.org/XML/gnc}account'):
-        parent_guid, acc = _account_from_tree(child, commoditydict)
-        if acc.actype == 'ROOT':
-            root_account = acc
-        accountdict[acc.guid] = acc
-        parentdict[acc.guid] = parent_guid
-    for acc in list(accountdict.values()):
-        if acc.parent is None and acc.actype != 'ROOT':
-            parent = accountdict[parentdict[acc.guid]]
-            acc.parent = parent
-            parent.children.append(acc)
-            accounts.append(acc)
-
-    transactions = []
-    for child in tree.findall('{http://www.gnucash.org/XML/gnc}'
-                              'transaction'):
-        transactions.append(_transaction_from_tree(child,
-                                                   accountdict,
-                                                   commoditydict))
-
-    slots = _slots_from_tree(
-        tree.find('{http://www.gnucash.org/XML/book}slots'))
-    return Book(tree=tree,
-                guid=guid,
-                prices=prices,
-                transactions=transactions,
-                root_account=root_account,
-                accounts=accounts,
-                commodities=commodities,
-                slots=slots)
-
-
-# Implemented:
-# - act:name
-# - act:id
-# - act:type
-# - act:description
-# - act:commodity
-# - act:commodity-scu
-# - act:parent
-# - act:slots
-def _account_from_tree(tree, commoditydict):
-    act = '{http://www.gnucash.org/XML/act}'
-    cmdty = '{http://www.gnucash.org/XML/cmdty}'
-
-    name = tree.find(act + 'name').text
-    guid = tree.find(act + 'id').text
-    actype = tree.find(act + 'type').text
-    description = tree.find(act + "description")
-    if description is not None:
-        description = description.text
-    slots = _slots_from_tree(tree.find(act + 'slots'))
-    if actype == 'ROOT':
-        parent_guid = None
-        commodity = None
-        commodity_scu = None
-    else:
-        parent_guid = tree.find(act + 'parent').text
-        commodity_space = tree.find(act + 'commodity/' +
-                                    cmdty + 'space').text
-        commodity_name = tree.find(act + 'commodity/' +
-                                   cmdty + 'id').text
-        commodity_scu = tree.find(act + 'commodity-scu').text
-        commodity = commoditydict[(commodity_space, commodity_name)]
-    return parent_guid, Account(name=name,
-                                description=description,
-                                guid=guid,
-                                actype=actype,
-                                commodity=commodity,
-                                commodity_scu=commodity_scu,
-                                slots=slots)
-
-
-# Implemented:
-# - trn:id
-# - trn:currency
-# - trn:date-posted
-# - trn:date-entered
-# - trn:description
-# - trn:splits / trn:split
-# - trn:slots
-def _transaction_from_tree(tree, accountdict, commoditydict):
-    trn = '{http://www.gnucash.org/XML/trn}'
-    cmdty = '{http://www.gnucash.org/XML/cmdty}'
-    ts = '{http://www.gnucash.org/XML/ts}'
-    split = '{http://www.gnucash.org/XML/split}'
-
-    guid = tree.find(trn + "id").text
-    currency_space = tree.find(trn + "currency/" +
-                               cmdty + "space").text
-    currency_name = tree.find(trn + "currency/" +
-                              cmdty + "id").text
-    currency = commoditydict[(currency_space, currency_name)]
-    date = parse_date(tree.find(trn + "date-posted/" +
-                                ts + "date").text)
-    date_entered = parse_date(tree.find(trn + "date-entered/" +
-                                        ts + "date").text)
-    description = tree.find(trn + "description").text
-
-    # rarely used
-    num = tree.find(trn + "num")
-    if num is not None:
-        num = num.text
-
-    slots = _slots_from_tree(tree.find(trn + "slots"))
-    transaction = Transaction(guid=guid,
-                              currency=currency,
-                              date=date,
-                              date_entered=date_entered,
-                              description=description,
-                              num=num,
-                              slots=slots)
-
-    for subtree in tree.findall(trn + "splits/" + trn + "split"):
-        split = _split_from_tree(subtree, accountdict, transaction)
-        transaction.splits.append(split)
-
-    return transaction
-
-
-# Implemented:
-# - split:id
-# - split:memo
-# - split:reconciled-state
-# - split:reconcile-date
-# - split:value
-# - split:quantity
-# - split:account
-# - split:slots
-def _split_from_tree(tree, accountdict, transaction):
-    split = '{http://www.gnucash.org/XML/split}'
-    ts = "{http://www.gnucash.org/XML/ts}"
-
-    guid = tree.find(split + "id").text
-    memo = tree.find(split + "memo")
-    if memo is not None:
-        memo = memo.text
-    reconciled_state = tree.find(split + "reconciled-state").text
-    reconcile_date = tree.find(split + "reconcile-date/" + ts + "date")
-    if reconcile_date is not None:
-        reconcile_date = parse_date(reconcile_date.text)
-    value = _parse_number(tree.find(split + "value").text)
-    quantity = _parse_number(tree.find(split + "quantity").text)
-    account_guid = tree.find(split + "account").text
-    account = accountdict[account_guid]
-    slots = _slots_from_tree(tree.find(split + "slots"))
-    action = tree.find(split + "action")
-    if action is not None:
-        action = action.text
-
-    split = Split(guid=guid,
-                  memo=memo,
-                  reconciled_state=reconciled_state,
-                  reconcile_date=reconcile_date,
-                  value=value,
-                  quantity=quantity,
-                  account=account,
-                  transaction=transaction,
-                  action=action,
-                  slots=slots)
-    account.splits.append(split)
-    return split
-
-
-# Implemented:
-# - slot
-# - slot:key
-# - slot:value
-# - ts:date
-# - gdate
-# - list
-def _slots_from_tree(tree):
-    if tree is None:
-        return {}
-    slot = "{http://www.gnucash.org/XML/slot}"
-    ts = "{http://www.gnucash.org/XML/ts}"
-    slots = {}
-    for elt in tree.findall("slot"):
-        key = elt.find(slot + "key").text
-        value = elt.find(slot + "value")
-        type_ = value.get('type', 'string')
-        if type_ in ('integer', 'double'):
-            slots[key] = int(value.text)
-        elif type_ == 'numeric':
-            slots[key] = _parse_number(value.text)
-        elif type_ in ('string', 'guid'):
-            slots[key] = value.text
-        elif type_ == 'gdate':
-            slots[key] = parse_date(value.find("gdate").text)
-        elif type_ == 'timespec':
-            slots[key] = parse_date(value.find(ts + "date").text)
-        elif type_ == 'frame':
-            slots[key] = _slots_from_tree(value)
-        elif type_ == 'list':
-            slots[key] = [_slots_from_tree(lelt) for lelt in value.findall(slot + "value")]
-        else:
-            raise RuntimeError("Unknown slot type {}".format(type_))
-    return slots
-
-
-def _parse_number(numstring):
-    num, denum = numstring.split("/")
-    return decimal.Decimal(num) / decimal.Decimal(denum)
+    for act in book.accounts:
+        print(act.fullname)

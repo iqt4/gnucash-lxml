@@ -9,15 +9,15 @@ if not os.path.exists("README.txt"):
     shutil.copy("README.md", "README.txt")
 
 setup(name='gnucashxml',
-      version='1.0',
-      description="Parse GNU Cash XML files",
+      version='1.9',
+      description="Parse GnuCash XML files",
       long_description=open("README.md").read(),
       author="Jorgen Schaefer",
       author_email="forcer@forcix.cx",
       url="https://github.com/jorgenschaefer/gnucashxml",
       py_modules=['gnucashxml'],
       install_requires=[
-          'python-dateutil'
+          'python-dateutil', 'lxml'
       ],
       classifiers=[
           "Development Status :: 4 - Beta",
