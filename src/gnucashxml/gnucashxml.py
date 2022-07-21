@@ -65,14 +65,6 @@ def get_xml_parser():
     return parser
 
 
-class SlotElementLookup(etree.CustomElementClassLookup):
-    def lookup(self, node_type, document, namespace, name):
-        if node_type == 'element' and namespace is None and name == 'slot':
-            return Slot
-        else:
-            return None  # pass on to (default) fallback
-
-
 class QueryBase(ABC):
     def __get__(self, obj, obj_type=None):
         return self.query_function(obj)
@@ -183,7 +175,7 @@ class GetAccount(QueryBase):
     def query_function(self, act: Account):
         e: etree.ElementBase = act.find(self.path, act.nsmap)
         if e is not None and e.get("type") == "guid":
-            # xpath is slow
+            # xpath is too slow
             # expr = '/gnc-v2/gnc:book/gnc:account/act:id[text() = $guid]/parent::*'
             # return e.xpath(expr, guid=e.text, namespaces=e.nsmap)[0]
             return self._account_index.get(e.text)
@@ -212,27 +204,28 @@ class Book(etree.ElementBase):
     slots = GetElement('book:slots')
 
     def _init(self):
-        self.findall('gnc:commodity', self.nsmap)  # Initialize the Commodity classes
-        self.findall('gnc:account', self.nsmap)  # Initialize the Account classes
+        self._commodities = self.findall('gnc:commodity', self.nsmap)
+        self._accounts = self.findall('gnc:account', self.nsmap)
+        self._transactions = self.findall('gnc:transaction', self.nsmap)
 
     def __repr__(self):
         return f"<Book {self.guid}>"
 
     @property
     def commodities(self):
-        return self.iterfind('gnc:commodity', self.nsmap)
+        return self._commodities
 
     @property
     def root_account(self):
-        return self.accounts[0]
+        return self._accounts[0]
 
     @property
     def accounts(self):
-        return list(self.iterfind('gnc:account', self.nsmap))
+        return self._accounts
 
     @property
     def transactions(self):
-        return self.iterfind('gnc:transaction', self.nsmap)
+        return self._transactions
 
     def walk(self):
         return self.root_account.walk()
@@ -392,7 +385,6 @@ class Transaction(etree.ElementBase):
     def __repr__(self):
         return f"<Transaction on {self.date} {self.description}>"
 
-
 #     def __lt__(self, other):
 #         # For sorted() only
 #         if isinstance(other, Transaction):
@@ -448,5 +440,5 @@ class Slot(etree.ElementBase):
 if __name__ == "__main__":
     book = load("../Haushalt.gnucash.gz")
 
-    for act in book.accounts:
-        print(act.fullname)
+    for acc in book.accounts:
+        print(acc.fullname)
