@@ -24,7 +24,7 @@ def read(*names, **kwargs):
 
 setup(
     name='gnucashxml',
-    version='1.x',
+    version='0.8.0',
     description="Parse GnuCash XML files",
     long_description=read("README.md"),
     author="Dirk Silkenbäumer",
