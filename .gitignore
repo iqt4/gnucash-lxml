@@ -1,1 +1,42 @@
+# IDE-specific files
 .idea/
+.vscode/
+
+# macOS-specific files
+.DS_Store
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+.env/
+
+# Distribution/build directories
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test coverage and reports
+.coverage
+coverage.xml
+htmlcov/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Pytest cache
+.pytest_cache/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# MyPy cache
+.mypy_cache/
+
+# Editor swap files
+*.swp
+*.swo
