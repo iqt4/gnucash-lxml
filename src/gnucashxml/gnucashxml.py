@@ -25,7 +25,7 @@ import decimal
 from dateutil.parser import parse as parse_date
 from lxml import etree
 
-__version__ = "0.8.0"
+__version__ = "1.90"
 
 
 def load(source):
