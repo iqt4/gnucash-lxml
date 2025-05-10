@@ -13,25 +13,27 @@ from os.path import splitext
 from setuptools import find_packages
 from setuptools import setup
 
+from src.gnucashxml import __version__
 
 def read(*names, **kwargs):
     with io.open(
-            join(dirname(__file__), *names),
-            encoding=kwargs.get('encoding', 'utf8')
+        join(dirname(__file__), *names),
+        encoding=kwargs.get('encoding', 'utf8')
     ) as fh:
         return fh.read()
 
-
 setup(
     name='gnucashxml',
-    version='0.8.0',
+    version=__version__,
     description="Parse GnuCash XML files",
     long_description=read("README.md"),
+    long_description_content_type="text/markdown",
     author="Dirk Silkenbäumer",
     author_email="none",
-    url="https://github.com/iqt4/gnucashxml",
+    url="https://github.com/iqt4/gnucashxml-lxml",
     packages=find_packages('src'),
     package_dir={'': 'src'},
+    python_requires=">=3.8",
     py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
     install_requires=[
         'python-dateutil', 'lxml',
@@ -42,8 +44,9 @@ setup(
         "Intended Audience :: Developers",
         ("License :: OSI Approved :: "
          "GNU General Public License v3 or later (GPLv3+)"),
-        "Programming Language :: Python",
+        "Programming Language :: Python :: 3",
         "Topic :: Office/Business :: Financial :: Accounting",
     ],
     license="GPL",
+    keywords="gnucash xml finance accounting",
 )
