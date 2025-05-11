@@ -4,7 +4,7 @@
 #           (C) 2025 Dirk Silkenbäumer
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from .parsing import load, get_xml_parser
+from .parsing import load
 from .models import Book, Commodity, Price, Account, Transaction, Split, Slot
 
 __version__ = "1.90"

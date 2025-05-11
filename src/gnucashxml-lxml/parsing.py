@@ -14,13 +14,9 @@ def load(source) -> Book:
     # Not implemented:
     # - gnc:count-data
 
-    parser = get_xml_parser()
-    root = etree.parse(source, parser=parser).getroot()
-    return root.find('gnc:book', root.nsmap)
-
-def get_xml_parser() -> etree.XMLParser:
     parser = etree.XMLParser()
     parser.set_element_class_lookup(ns_lookup)
-    return parser
+    root = etree.parse(source, parser=parser).getroot()
+    return root.find('gnc:book', root.nsmap)
 
 # Contains AI-generated edits.
