@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gnucash-lxml"
+version = "0.1.0a1"
+description = "Parse GnuCash XML files"
+readme = "README.md"
+authors = [
+    { name = "Dirk Silkenbäumer" }
+]
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.8"
+dependencies = [
+    "lxml>=5.0.0",
+    "python-dateutil>=2.8.0"
+]
+keywords = ["gnucash", "xml", "finance", "accounting"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Office/Business :: Financial :: Accounting"
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["gnucash_lxml"]
+
+# Contains AI-generated edits.
