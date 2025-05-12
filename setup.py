@@ -1,19 +1,8 @@
-#!/usr/bin/env python
-# -*- encoding: utf-8 -*-
-# inspired by https://blog.ionelmc.ro/2014/05/25/python-packaging/
-#
+from setuptools import setup, find_packages
 import io
+from os.path import dirname, join
 
-from glob import glob
-from os.path import basename
-from os.path import dirname
-from os.path import join
-from os.path import splitext
-
-from setuptools import find_packages
-from setuptools import setup
-
-from src.gnucashxml import __version__
+VERSION = "0.1.0a1"
 
 def read(*names, **kwargs):
     with io.open(
@@ -23,27 +12,36 @@ def read(*names, **kwargs):
         return fh.read()
 
 setup(
-    name='gnucashxml',
-    version=__version__,
+    name='gnucash-lxml',
+    version=VERSION,
     description="Parse GnuCash XML files",
     long_description=read("README.md"),
     long_description_content_type="text/markdown",
     author="Dirk Silkenbäumer",
-    author_email="none",
-    url="https://github.com/iqt4/gnucashxml-lxml",
-    packages=find_packages('src'),
+    url="https://github.com/iqt4/gnucash-lxml",
+    
+    # Package structure
     package_dir={'': 'src'},
+    packages=find_packages(where='src'),
+    
+    # Dependencies
     python_requires=">=3.8",
-    py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
     install_requires=[
-        'python-dateutil', 'lxml',
+        'lxml>=5.0.0',
+        'python-dateutil>=2.8.0',
     ],
+    extras_require={
+        'test': [
+            'pytest>=7.0',
+            'pytest-cov>=4.0',
+        ],
+    },
+    
+    # Metadata
     classifiers=[
-        # complete classifier list: http://pypi.python.org/pypi?%3Aaction=list_classifiers
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Developers",
-        ("License :: OSI Approved :: "
-         "GNU General Public License v3 or later (GPLv3+)"),
+        "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
         "Programming Language :: Python :: 3",
         "Topic :: Office/Business :: Financial :: Accounting",
     ],
