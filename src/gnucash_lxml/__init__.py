@@ -6,7 +6,8 @@
 
 from .parsing import load
 from .models import Book, Commodity, Price, Account, Transaction, Split, Slot
+from importlib.metadata import version
 
-__version__ = "0.1.0a1"
+__version__ = version("gnucash-lxml")
 
 # Contains AI-generated edits.
