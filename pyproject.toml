@@ -37,4 +37,14 @@ test = [
 package-dir = {"" = "src"}
 packages = ["gnucash_lxml"]
 
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-v -ra --tb=short"
+testpaths = [
+    "tests",
+]
+python_files = [
+  "test_*.py"
+]
+
 # Contains AI-generated edits.

@@ -128,6 +128,5 @@ class GetAccount(QueryBase):
     @classmethod
     def register(cls, obj: Any):
         cls._account_index.setdefault(obj.guid, obj)
-        cls._account_index.setdefault(obj.guid, obj)
 
 # Contains AI-generated edits.
