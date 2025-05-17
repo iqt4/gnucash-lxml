@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from .parsing import load
-from .models import Book, Commodity, Price, Account, Transaction, Split, Slot
+from .model import Book, Commodity, Price, Account, Transaction, Split, Slot
 from importlib.metadata import version
 
 __version__ = version("gnucash-lxml")

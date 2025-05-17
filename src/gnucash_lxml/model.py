@@ -1,4 +1,4 @@
-# models.py --- Data models for GnuCash XML
+# model.py --- Data models for GnuCash XML
 # Copyright (C) 2012 Jorgen Schaefer <forcer@forcix.cx>
 #           (C) 2017 Christopher Lam
 #           (C) 2025 Dirk Silkenbäumer
@@ -31,7 +31,7 @@ class Book(etree.ElementBase):
     # - gnc:template-transactions
     # - gnc:count-data
 
-    guid: Any = GetText('book:id')
+    guid = GetText('book:id')
     prices = GetElement('gnc:pricedb')
     slots = GetElement('book:slots')
 
@@ -75,8 +75,8 @@ class Commodity(etree.ElementBase):
     # - cmdty:source => text, optional, e.g. "currency"
     # - cmdty:fraction => optional, e.g. "1"
 
-    space: Any = GetText('./cmdty:space')
-    symbol: Any = GetText('./cmdty:id')
+    space = GetText('./cmdty:space')
+    symbol = GetText('./cmdty:id')
     name = GetText('./cmdty:name')
     xcode = GetText('./cmdty:xcode')
 
@@ -96,10 +96,10 @@ class Price(etree.ElementBase):
     """
 
     guid = GetText('price:id')
-    commodity: Any = GetCommodity('price:commodity')
-    currency: Any = GetCommodity('price:currency')
-    date: Any = GetDate('price:time/ts:date')
-    value: Any = GetNumber('price:value')
+    commodity = GetCommodity('price:commodity')
+    currency = GetCommodity('price:currency')
+    date = GetDate('price:time/ts:date')
+    value = GetNumber('price:value')
 
     def __repr__(self):
         return f"<Price {self.date:%Y/%m/%d}: {self.value} {self.commodity}/{self.currency} >"
@@ -112,14 +112,14 @@ class Account(etree.ElementBase):
     <gnc:account/>
     """
 
-    name: Any = GetText('act:name')
-    guid: Any = GetText('act:id')
+    name = GetText('act:name')
+    guid = GetText('act:id')
     type = GetText('act:type')
     description = GetText('act:description')
     commodity_scu = GetText('act:commodity-scu')
     commodity = GetCommodity('act:commodity')
     parent_guid = GetText('act:parent')
-    parent: Any = GetAccount('act:parent')
+    parent = GetAccount('act:parent')
     slots = GetElement('act:slots')
 
     def _init(self):
@@ -176,9 +176,9 @@ class Transaction(etree.ElementBase):
     guid = GetText('trn:id')
     currency = GetCommodity('trn:currency')
     num = GetText('trn:num')
-    date: Any = GetDate('trn:date-posted/ts:date')
+    date = GetDate('trn:date-posted/ts:date')
     date_entered = GetDate('trn:date-entered/ts:date')
-    description: Any = GetText('trn:description')
+    description = GetText('trn:description')
     splits = GetElement('trn:splits')
     slots = GetElement('trn:slots')
 
@@ -197,9 +197,9 @@ class Split(etree.ElementBase):
     memo = GetText('split:memo')
     reconciled_state = GetText('split:reconciled-state')
     reconcile_date = GetDate('split:reconcile-date/ts:date')
-    value: Any = GetNumber('split:value')
+    value = GetNumber('split:value')
     quantity = GetNumber('split:quantity')
-    account: Any = GetAccount('split:account')
+    account = GetAccount('split:account')
     action = GetText('split:action')
     slots = GetElement('split:slots')
 
@@ -217,8 +217,8 @@ class Slot(etree.ElementBase):
     A slot contains all kind of information.
     <slot/>
     """
-    key: Any = GetText('slot:key')
-    value: Any = GetValue('slot:value')
+    key = GetText('slot:key')
+    value = GetValue('slot:value')
 
     def __repr__(self):
         return f"<Slot {self.key}:{self.value}>"
