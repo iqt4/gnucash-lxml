@@ -90,43 +90,41 @@ class GetValue(QueryBase):
         return self.value_lookup(e)
 
 
-class GetCommodity(QueryBase):
-    """
-    Query descriptor to retrieve a Commodity instance from an XML element by path
-    """
-    # Map between tuple of space.symbol and Commodity instance
-    _commodity_index = {}
-
-    def __init__(self, path: str):
-        self.path = path
-    def query_function(self, obj: etree.ElementBase) -> Any:
-        e = obj.find(self.path, obj.nsmap)
-        if e is not None:
-            c_space = e.findtext('cmdty:space', namespaces=e.nsmap)
-            c_symbol = e.findtext('cmdty:id', namespaces=e.nsmap)
-            return self._commodity_index.get((c_space, c_symbol))
-
-    @classmethod
-    def register(cls, obj: Any):
-        cls._commodity_index.setdefault((obj.space, obj.symbol), obj)
+# class GetCommodity(QueryBase):
+#     """
+#     Query descriptor to retrieve a Commodity instance from an XML element by path
+#     """
+    
+#     def __init__(self, path: str):
+#         self.path = path
+#     def query_function(self, obj: etree.ElementBase) -> Any:
+#         c = obj.find(self.path, namespaces=obj.nsmap)
+#         if c is not None:
+#             c_space = c.findtext('cmdty:space', namespaces=c.nsmap)
+#             c_symbol = c.findtext('cmdty:id', namespaces=c.nsmap)
+#             book = obj.getparent()
+#             for c in book.commodities:
+#                 if c.space == c_space and c.symbol == c_symbol:
+#                     return c
+#         return None
 
 
-class GetAccount(QueryBase):
-    """
-    Query descriptor to retrieve an Account instance by GUID
-    """
-    # Map between GUID and Account instance
-    _account_index = {}
+# class GetAccount(QueryBase):
+#     """
+#     Query descriptor to retrieve an Account instance by GUID
+#     """
+#     # Map between GUID and Account instance
+#     _account_index = {}
 
-    def __init__(self, path: str):
-        self.path = path
-    def query_function(self, obj: Any) -> Any:
-        e: etree.ElementBase = obj.find(self.path, obj.nsmap)
-        if e is not None and e.get("type", None) == "guid":
-            return self._account_index.get(e.text)
+#     def __init__(self, path: str):
+#         self.path = path
+#     def query_function(self, obj: Any) -> Any:
+#         e: etree.ElementBase = obj.find(self.path, obj.nsmap)
+#         if e is not None and e.get("type", None) == "guid":
+#             return self._account_index.get(e.text)
 
-    @classmethod
-    def register(cls, obj: Any):
-        cls._account_index.setdefault(obj.guid, obj)
+#     @classmethod
+#     def register(cls, obj: Any):
+#         cls._account_index.setdefault(obj.guid, obj)
 
 # Contains AI-generated edits.
