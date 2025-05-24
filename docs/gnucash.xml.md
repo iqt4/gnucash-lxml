@@ -1,4 +1,5 @@
 # GnuCash XML structure:
+````
 gnc-v2/
 ├── gnc:count-data
 ├── gnc:book/
@@ -58,7 +59,7 @@ gnc-v2/
 │               ├── split:account
 │               ├── split:slots
 │               └── split:lot
-
+```
 # Main components:
 | Component         | Description                                 |
 |-------------------|---------------------------------------------|
@@ -70,13 +71,13 @@ gnc-v2/
 
 Each element type has its own namespace which matches the Python class structure in model.py as follows:
 | XML Element         | Python Class |
-|---------------------|-------------|
-| gnc:book            | Book        |
-| gnc:commodity       | Commodity   |
-| gnc:pricedb         | PriceDB     |
-| gnc:account         | Account     |
-| gnc:transaction     | Transaction |
-| trn:split           | Split       |
+|---------------------|--------------|
+| gnc:book            | Book         |
+| gnc:commodity       | Commodity    |
+| gnc:pricedb         | Book.prices  |
+| gnc:account         | Account      |
+| gnc:transaction     | Transaction  |
+| trn:split           | Split        |
 
 # Source
 [commodity ids](https://github.com/Gnucash/gnucash/blob/035819323fd9c344260521ddcbfe640204159732/libgnucash/backend/xml/gnc-commodity-xml-v2.cpp#L46)
