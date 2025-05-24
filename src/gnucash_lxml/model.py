@@ -20,6 +20,10 @@ none_element = ns_lookup.get_namespace(None)
 # Register namespace for commodities as they don't have a guid
 NAMESPACE_CMDTY = uuid.uuid4()
 
+class UnsupportedVersionError(Exception):
+    """Raised when XML element version is not supported"""
+    pass
+
 @gnc_element('book')
 class Book(etree.ElementBase):
     """
@@ -47,8 +51,16 @@ class Book(etree.ElementBase):
     _slots_element = GetElement('book:slots')
     _pricedb_element = GetElement('gnc:pricedb')
 
+    SUPPORTED_VERSIONS = ['2.0.0']  # List of supported versions
+
     def _init(self):
-        """Initialize book and build index of objects"""
+        """Initialize book and verify version"""
+        version = self.get('version', None)
+        if version not in self.SUPPORTED_VERSIONS:
+            raise UnsupportedVersionError(
+                f"Book version '{version}' not supported. Supported versions: {self.SUPPORTED_VERSIONS}"
+            )
+        # Initialize book and build index of objects
         self._index = {}
         self._commodities = self.findall('gnc:commodity', self.nsmap)
         self._accounts = self.findall('gnc:account', self.nsmap)
@@ -112,6 +124,12 @@ class Book(etree.ElementBase):
         Price database with lazy loading of price entries.
         Returns list of Price objects.
         """
+        PRICEDB_VERSIONS = ['1']  # List of PriceDB supported versions
+        version = self._pricedb_element.get('version', None)
+        if version not in PRICEDB_VERSIONS:
+            raise UnsupportedVersionError(
+                f"PriceDB version '{version}' not supported. Supported version: {PRICEDB_VERSIONS}"
+            )
         if self._prices is None and self._pricedb_element is not None:
             self._prices = self._pricedb_element.findall('price', namespaces=self.nsmap)
         return self._prices or []
@@ -151,8 +169,15 @@ class Commodity(etree.ElementBase):
     name = GetText('cmdty:name')
     xcode = GetText('cmdty:xcode')
 
+    SUPPORTED_VERSIONS = ['2.0.0']
+
     def _init(self):
-        """Initialize commodity and register it in book's index"""
+        """Initialize commodity with version checking and register it in book's index"""
+        version = self.get('version', None)
+        if version not in self.SUPPORTED_VERSIONS:
+            raise UnsupportedVersionError(
+                f"Commodity version '{version}' not supported. Supported versions: {self.SUPPORTED_VERSIONS}"
+            )
         book = self.getparent()
         book._index.setdefault(self.guid, self)
 
@@ -240,8 +265,15 @@ class Account(etree.ElementBase):
     # Internal XML elements
     _slots_element = GetElement('act:slots')
 
+    SUPPORTED_VERSIONS = ['2.0.0']
+    
     def _init(self):
-        """Initialize account and register it in book's index"""
+        """Initialize account with version checking and register it in book's index"""
+        version = self.get('version', None)
+        if version not in self.SUPPORTED_VERSIONS:
+            raise UnsupportedVersionError(
+                f"Account version '{version}' not supported. Supported versions: {self.SUPPORTED_VERSIONS}"
+            )
         book = self.getparent()
         book._index.setdefault(self.guid, self)
 
@@ -339,6 +371,16 @@ class Transaction(etree.ElementBase):
     _splits_element = GetElement('trn:splits')
     _slots_element  = GetElement('trn:slots')
 
+    SUPPORTED_VERSIONS = ['2.0.0']
+
+    def _init(self):
+        """Verify version"""
+        version = self.get('version', None)
+        if version not in self.SUPPORTED_VERSIONS:
+            raise UnsupportedVersionError(
+                f"Transaction version '{version}' not supported. Supported versions: {self.SUPPORTED_VERSIONS}"
+            )
+        
     def __repr__(self):
         return f"<Transaction {self.guid} on {self.date}: {self.description}>"
     

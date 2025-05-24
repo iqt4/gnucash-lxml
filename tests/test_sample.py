@@ -5,6 +5,7 @@ from gnucash_lxml.model import Book, Account, Transaction, Commodity
 def test_book_properties(sample_gnucash):
     """Test basic Book properties"""
     assert isinstance(sample_gnucash, Book)
+    assert sample_gnucash.get('version') in Book.SUPPORTED_VERSIONS
     assert sample_gnucash.guid is not None
     assert len(sample_gnucash.accounts) > 0
 
