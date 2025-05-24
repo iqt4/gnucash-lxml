@@ -1,64 +1,64 @@
 # GnuCash XML structure:
-````
+```
 gnc-v2/
 ├── gnc:count-data
-├── gnc:book/
-│   ├── book:id
-│   ├── book:slots/
-│   │   └── slot/
-│   │       ├── slot:key
-│   │       └── slot:value
-│   ├── gnc:commodity/
-│   │   ├── cmdty:space
-│   │   ├── cmdty:id
-│   │   ├── cmdty:name
-│   │   ├── cmdty:xcode
-│   │   ├── cmdty:fraction
-│   │   ├── cmdty:get_quotes
-│   │   ├── cmdty:quote_sources
-│   │   ├── cmdty:quote_tz
-│   │   └── cmdty:slots
-│   ├── gnc:pricedb/
-│   │   └── price/
-│   │       ├── price:id
-│   │       ├── price:commodity
-│   │       ├── price:currency
-│   │       ├── price:time
-│   │       ├── price:source
-│   │       ├── price:type
-│   │       └── price:value
-│   ├── gnc:account/
-│   │   ├── act:name
-│   │   ├── act:id
-│   │   ├── act:type
-│   │   ├── act:commodity
-│   │   ├── act:commodity-scu
-│   │   ├── act:non-standard-scu
-│   │   ├── act:code
-│   │   ├── act:description
-│   │   ├── act:slots
-│   │   ├── act:parent
-│   │   └── act:lots
-│   └── gnc:transaction/
-│       ├── trn:id
-│       ├── trn:num
-│       ├── trn:currency
-│       ├── trn:date-posted
-│       ├── trn:date-entered
-│       ├── trn:description
-│       ├── trn:slots
-│       └── trn:splits/
-│           └── trn:split/
-│               ├── split:id
-│               ├── split:memo
-│               ├── split:action
-│               ├── split:reconciled-state
-│               ├── split:reconcile-date
-│               ├── split:value
-│               ├── split:quantity
-│               ├── split:account
-│               ├── split:slots
-│               └── split:lot
+└── gnc:book/
+    ├── book:id
+    ├── book:slots/
+    │   └── slot/
+    │       ├── slot:key
+    │       └── slot:value
+    ├── gnc:commodity/
+    │   ├── cmdty:space
+    │   ├── cmdty:id
+    │   ├── cmdty:name
+    │   ├── cmdty:xcode
+    │   ├── cmdty:fraction
+    │   ├── cmdty:get_quotes
+    │   ├── cmdty:quote_sources
+    │   ├── cmdty:quote_tz
+    │   └── cmdty:slots
+    ├── gnc:pricedb/
+    │   └── price/
+    │       ├── price:id
+    │       ├── price:commodity
+    │       ├── price:currency
+    │       ├── price:time
+    │       ├── price:source
+    │       ├── price:type
+    │       └── price:value
+    ├── gnc:account/
+    │   ├── act:name
+    │   ├── act:id
+    │   ├── act:type
+    │   ├── act:commodity
+    │   ├── act:commodity-scu
+    │   ├── act:non-standard-scu
+    │   ├── act:code
+    │   ├── act:description
+    │   ├── act:slots
+    │   ├── act:parent
+    │   └── act:lots
+    └── gnc:transaction/
+        ├── trn:id
+        ├── trn:num
+        ├── trn:currency
+        ├── trn:date-posted
+        ├── trn:date-entered
+        ├── trn:description
+        ├── trn:slots
+        └── trn:splits/
+            └── trn:split/
+                ├── split:id
+                ├── split:memo
+                ├── split:action
+                ├── split:reconciled-state
+                ├── split:reconcile-date
+                ├── split:value
+                ├── split:quantity
+                ├── split:account
+                ├── split:slots
+                └── split:lot
 ```
 # Main components:
 | Component         | Description                                 |
