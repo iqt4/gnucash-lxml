@@ -10,6 +10,7 @@ from typing import Any
 from .query import (
     GetElement, GetText, GetDate, GetNumber, GetValue
 )
+#from .prices import Price, PriceDB
 
 # Setup namespace lookup
 ns_lookup = etree.ElementNamespaceClassLookup()
@@ -46,11 +47,11 @@ class Book(etree.ElementBase):
     """
     # Simple attributes using descriptors
     guid = GetText('book:id')
+    _pricedb = GetElement('gnc:pricedb')
 
     # Internal XML elements
     _slots_element = GetElement('book:slots')
-    _pricedb_element = GetElement('gnc:pricedb')
-
+    
     SUPPORTED_VERSIONS = ['2.0.0']  # List of supported versions
 
     def _init(self):
@@ -65,8 +66,8 @@ class Book(etree.ElementBase):
         self._commodities = self.findall('gnc:commodity', self.nsmap)
         self._accounts = self.findall('gnc:account', self.nsmap)
         self._transactions = self.findall('gnc:transaction', self.nsmap)
-        self._prices = None
-
+        # TODO: Read <gnc:count-data/> and verify counts
+        
     def __repr__(self):
         return f"<Book {self.guid}>"
 
@@ -124,15 +125,7 @@ class Book(etree.ElementBase):
         Price database with lazy loading of price entries.
         Returns list of Price objects.
         """
-        PRICEDB_VERSIONS = ['1']  # List of PriceDB supported versions
-        version = self._pricedb_element.get('version', None)
-        if version not in PRICEDB_VERSIONS:
-            raise UnsupportedVersionError(
-                f"PriceDB version '{version}' not supported. Supported version: {PRICEDB_VERSIONS}"
-            )
-        if self._prices is None and self._pricedb_element is not None:
-            self._prices = self._pricedb_element.findall('price', namespaces=self.nsmap)
-        return self._prices or []
+        return self._pricedb.prices
 
     def walk(self):
         """Walk the account tree starting from root account"""
@@ -194,44 +187,44 @@ class Commodity(etree.ElementBase):
         return uuid.uuid5(NAMESPACE_CMDTY, f"{self.space}:{self.symbol}").hex
 
 
-@none_element('price')
-class Price(etree.ElementBase):
-    """
-    A price represents the value of a commodity in terms of a currency at a specific date.
-    <gnc:price/>
+# @none_element('price')
+# class Price(etree.ElementBase):
+#     """
+#     A price represents the value of a commodity in terms of a currency at a specific date.
+#     <gnc:price/>
 
-    XML Structure:
-        price:id       -> guid (str): Unique identifier
-        price:commodity -> commodity (Commodity): The commodity being priced
-        price:currency -> currency (Commodity): The currency used for pricing
-        price:time     -> date (datetime): Date of the price quote
-        price:value    -> value (Decimal): The price value
-        price:type     -> type (str): Price type (optional)
-        price:source   -> source (str): Source of price data (optional)
+#     XML Structure:
+#         price:id       -> guid (str): Unique identifier
+#         price:commodity -> commodity (Commodity): The commodity being priced
+#         price:currency -> currency (Commodity): The currency used for pricing
+#         price:time     -> date (datetime): Date of the price quote
+#         price:value    -> value (Decimal): The price value
+#         price:type     -> type (str): Price type (optional)
+#         price:source   -> source (str): Source of price data (optional)
 
-    Not Implemented:
-        - price:type   Optional price type
-        - price:source Optional source information
-    """
-    # Simple attributes using descriptors
-    guid = GetText('price:id')
-    date = GetDate('price:time/ts:date')
-    value = GetNumber('price:value')
+#     Not Implemented:
+#         - price:type   Optional price type
+#         - price:source Optional source information
+#     """
+#     # Simple attributes using descriptors
+#     guid = GetText('price:id')
+#     date = GetDate('price:time/ts:date')
+#     value = GetNumber('price:value')
 
-    def __repr__(self):
-        return f"<Price {self.date:%Y-%m-%d} {self.commodity}/{self.currency}: {self.value}>"
+#     def __repr__(self):
+#         return f"<Price {self.date:%Y-%m-%d} {self.commodity}/{self.currency}: {self.value}>"
 
-    @property
-    def commodity(self):
-        """The commodity being priced"""
-        book = self.getparent().getparent()
-        return book._find_commodity(self, 'price:commodity')
+#     @property
+#     def commodity(self):
+#         """The commodity being priced"""
+#         book = self.getparent().getparent()
+#         return book._find_commodity(self, 'price:commodity')
 
-    @property
-    def currency(self):
-        """The currency in which the price is expressed"""
-        book = self.getparent().getparent()
-        return book._find_commodity(self, 'price:currency')
+#     @property
+#     def currency(self):
+#         """The currency in which the price is expressed"""
+#         book = self.getparent().getparent()
+#         return book._find_commodity(self, 'price:currency')
     
 
 @gnc_element('account')
@@ -464,3 +457,36 @@ class Slot(etree.ElementBase):
 
     def __repr__(self):
         return f"<Slot {self.key}:{self.value}>"
+
+# @gnc_element('pricedb')
+# class PriceDB(etree.ElementBase):
+#     """
+#     A price database containing historical prices for commodities.
+#     <gnc:pricedb/>
+
+#     XML Structure:
+#         price -> prices (list[Price]): List of price entries
+#     """
+#     SUPPORTED_VERSIONS = ['1']
+
+#     def _init(self):
+#         """Initialize price database and verify version"""
+#         version = self.get('version', None)
+#         if version not in self.SUPPORTED_VERSIONS:
+#             raise UnsupportedVersionError(
+#                 f"PriceDB version '{version}' not supported. Supported version: {self.SUPPORTED_VERSIONS}"
+#             )
+#         self._prices = None
+
+#     def __repr__(self):
+#         return f"<PriceDB with {len(self.prices)} entries>"
+
+#     @property
+#     def prices(self):
+#         """
+#         Price entries with lazy loading.
+#         Returns list of Price objects.
+#         """
+#         if self._prices is None:
+#             self._prices = self.findall('price', namespaces=self.nsmap)
+#         return self._prices or []

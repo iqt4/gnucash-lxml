@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from lxml import etree
-from .model import Book, Commodity, Account, Transaction, Price, Split, Slot, ns_lookup
+from .model import Book, ns_lookup
 
 def load(source) -> Book:
     """
