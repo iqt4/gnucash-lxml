@@ -44,17 +44,15 @@ class Price(etree.ElementBase):
     <price/>
 
     XML Structure:
-        price:id        -> guid (str): Unique identifier
-        price:commodity -> commodity (Commodity): The commodity being priced
-        price:currency  -> currency (Commodity): The currency used for pricing
-        price:time      -> date (datetime): Date of the price quote
-        price:value     -> value (Decimal): The price value
-        price:type      -> type (str): Price type (optional)
-        price:source    -> source (str): Source of price data (optional)
+        price:id         -> guid (str): Unique identifier
+        price:commodity  -> commodity (Commodity): The commodity being priced
+        price:currency   -> currency (Commodity): The currency used for pricing
+        price:time       -> date (datetime): Date of the price quote
+        price:value      -> value (Decimal): The price value
     
     Not Implemented:
-        - price:type   Optional price type
-        - price:source Optional source information
+        - price:type:    Optional price type
+        - price:source:  Optional source of price data
     """
     guid = GetText('price:id')
     date = GetDate('price:time/ts:date')

@@ -10,7 +10,6 @@ from typing import Any
 from .query import (
     GetElement, GetText, GetDate, GetNumber, GetValue
 )
-#from .prices import Price, PriceDB
 
 # Setup namespace lookup
 ns_lookup = etree.ElementNamespaceClassLookup()
@@ -18,7 +17,7 @@ gnc_element = ns_lookup.get_namespace('http://www.gnucash.org/XML/gnc')
 trn_element = ns_lookup.get_namespace('http://www.gnucash.org/XML/trn')
 none_element = ns_lookup.get_namespace(None)
 
-# Register namespace for commodities as they don't have a guid
+# Register UUID-namespace for commodities as they don't have a guid
 NAMESPACE_CMDTY = uuid.uuid4()
 
 class UnsupportedVersionError(Exception):
@@ -40,10 +39,9 @@ class Book(etree.ElementBase):
         gnc:pricedb      -> prices (list[Prices]): Price database
 
     Not Implemented:
-        - gnc:schedxaction: Scheduled transactions
-        - gnc:template-transactions: Transaction templates
-        - gnc:count-data: Data counts
-        - book:slots: Detailed slot elements
+        gnc:schedxaction: Scheduled transactions
+        gnc:template-transactions: Transaction templates
+        gnc:count-data: Data counts
     """
     # Simple attributes using descriptors
     guid = GetText('book:id')
@@ -67,6 +65,7 @@ class Book(etree.ElementBase):
         self._accounts = self.findall('gnc:account', self.nsmap)
         self._transactions = self.findall('gnc:transaction', self.nsmap)
         # TODO: Read <gnc:count-data/> and verify counts
+        # TODO: Harmonize coding: GetElement vs xpath vs findall
         
     def __repr__(self):
         return f"<Book {self.guid}>"
@@ -83,14 +82,14 @@ class Book(etree.ElementBase):
                 raise ValueError(f"Commodity {c_space}:{c_symbol} not found.")
             return c_obj
         
-    def _find_account(self, obj: etree.ElementBase, path: str) -> Any:
-        """Find an account in the book by GUID."""
+    def _find_by_guid(self, obj: etree.ElementBase, path: str) -> Any:
+        """Find an object in the book by GUID."""
         o = obj.find(path, namespaces=obj.nsmap)
         if o is not None:
             guid = o.text
             a_obj = self._index.get(guid)
             if a_obj is None:
-                raise ValueError(f"Account {guid} not found.")
+                raise ValueError(f"Object {guid} not found.")
             return a_obj
 
     # Public properties
@@ -139,22 +138,17 @@ class Commodity(etree.ElementBase):
     <gnc:commodity/>
 
     XML Structure:
-        cmdty:space    -> space (str): Namespace (e.g. 'CURRENCY', 'NYSE')
-        cmdty:id       -> symbol (str): Symbol identifier (e.g. 'EUR', 'AAPL')
-        cmdty:name     -> name (str): Full name (optional)
-        cmdty:xcode    -> xcode (str): Alternative code (optional)
-        cmdty:fraction -> fraction (str): Smallest fraction (optional)
-        cmdty:quote_source   -> source (str): Price quote source (optional)
-        cmdty:get_quotes -> get_quotes (str): Enable quote fetching (optional)
-        cmdty:quote_tz  -> quote_tz (str): Timezone for quotes (optional)
-        cmdty:slots    -> slots (ElementBase): Additional information (optional)
+        cmdty:space        -> space (str): Namespace (e.g. 'CURRENCY', 'NYSE')
+        cmdty:id           -> symbol (str): Symbol identifier (e.g. 'EUR', 'AAPL')
+        cmdty:name         -> name (str): Full name (optional)
+        cmdty:xcode        -> xcode (str): Alternative code (optional)
 
     Not Implemented:
-        - cmdty:get_quotes  Optional quote fetching flag
-        - cmdty:quote_tz    Optional quote timezone
-        - cmdty:source      Optional price source
-        - cmdty:fraction    Optional fraction specification
-        - cmdty:slots       Optional slot elements for additional information
+        cmdty:get_quotes:  Optional quote fetching flag
+        cmdty:quote_tz:    Optional quote timezone
+        cmdty:source:      Optional price source
+        cmdty:fraction:    Optional fraction specification
+        cmdty:slots:       Optional slot elements for additional information
     """
     # Simple attributes using descriptors
     space = GetText('cmdty:space')
@@ -187,46 +181,6 @@ class Commodity(etree.ElementBase):
         return uuid.uuid5(NAMESPACE_CMDTY, f"{self.space}:{self.symbol}").hex
 
 
-# @none_element('price')
-# class Price(etree.ElementBase):
-#     """
-#     A price represents the value of a commodity in terms of a currency at a specific date.
-#     <gnc:price/>
-
-#     XML Structure:
-#         price:id       -> guid (str): Unique identifier
-#         price:commodity -> commodity (Commodity): The commodity being priced
-#         price:currency -> currency (Commodity): The currency used for pricing
-#         price:time     -> date (datetime): Date of the price quote
-#         price:value    -> value (Decimal): The price value
-#         price:type     -> type (str): Price type (optional)
-#         price:source   -> source (str): Source of price data (optional)
-
-#     Not Implemented:
-#         - price:type   Optional price type
-#         - price:source Optional source information
-#     """
-#     # Simple attributes using descriptors
-#     guid = GetText('price:id')
-#     date = GetDate('price:time/ts:date')
-#     value = GetNumber('price:value')
-
-#     def __repr__(self):
-#         return f"<Price {self.date:%Y-%m-%d} {self.commodity}/{self.currency}: {self.value}>"
-
-#     @property
-#     def commodity(self):
-#         """The commodity being priced"""
-#         book = self.getparent().getparent()
-#         return book._find_commodity(self, 'price:commodity')
-
-#     @property
-#     def currency(self):
-#         """The currency in which the price is expressed"""
-#         book = self.getparent().getparent()
-#         return book._find_commodity(self, 'price:currency')
-    
-
 @gnc_element('account')
 class Account(etree.ElementBase):
     """
@@ -244,8 +198,7 @@ class Account(etree.ElementBase):
         act:slots         -> slots (ElementBase): Additional information
 
     Not Implemented:
-        - None (all elements from XML spec are implemented)
-        - act:slots (detailed slot elements)
+        None (all elements from XML spec are implemented)
     """
 
     name = GetText('act:name')
@@ -281,7 +234,7 @@ class Account(etree.ElementBase):
     @property
     def parent(self):
         book = self.getparent()
-        return book._find_account(self, 'act:parent')
+        return book._find_by_guid(self, 'act:parent')
 
     @property
     def children(self):
@@ -296,8 +249,6 @@ class Account(etree.ElementBase):
         book = self.getparent()
         expr = './gnc:transaction/trn:splits/trn:split[split:account/text() = $guid]'
         return book.xpath(expr, guid=self.guid, namespaces=self.nsmap)
-        # expr = '/gnc-v2/gnc:book/gnc:transaction/trn:splits/trn:split/split:account[text() = $guid]/parent::*'
-        # return self.xpath(expr, guid=self.guid, namespaces=self.nsmap)
 
     @property
     def slots(self):
@@ -340,18 +291,17 @@ class Transaction(etree.ElementBase):
     <gnc:transaction/>
 
     XML Structure:
-        trn:id              -> guid (str): Unique identifier
-        trn:num            -> num (str): Transaction number
-        trn:currency       -> currency (Commodity): Transaction currency
-        trn:date-posted    -> date (datetime): Date when transaction was posted
-        trn:date-entered   -> date_entered (datetime): Date when entered into system
-        trn:description    -> description (str): Transaction description
-        trn:splits         -> splits (list[Split]): List of transaction splits
+        trn:id            -> guid (str): Unique identifier
+        trn:num           -> num (str): Transaction number
+        trn:currency      -> currency (Commodity): Transaction currency
+        trn:date-posted   -> date (datetime): Date when transaction was posted
+        trn:date-entered  -> date_entered (datetime): Date when entered into system
+        trn:description   -> description (str): Transaction description
+        trn:splits        -> splits (list[Split]): List of transaction splits
         trn:slots         -> slots (Slots): Additional information
 
     Not Implemented:
-        - None (all elements from XML spec are implemented)
-        - trn:slots (detailed slot elements)
+        None (all elements from XML spec are implemented)
     """
     # Simple attributes using descriptors
     guid = GetText('trn:id')
@@ -402,19 +352,18 @@ class Split(etree.ElementBase):
     <trn:split/>
 
     XML Structure:
-        split:id              -> guid (str): Unique identifier
-        split:memo           -> memo (str): Split memo/description
-        split:reconciled-state -> reconciled_state (str): Reconciliation status
-        split:reconcile-date  -> reconcile_date (datetime): Date of reconciliation
-        split:value          -> value (Decimal): Value in transaction currency
-        split:quantity       -> quantity (Decimal): Amount in account commodity
-        split:action         -> action (str): Type of action
-        split:account        -> account (Account): Reference to account
-        split:slots         -> slots (ElementBase): Additional information
+        split:id                -> guid (str): Unique identifier
+        split:memo              -> memo (str): Split memo/description
+        split:reconciled-state  -> reconciled_state (str): Reconciliation status
+        split:reconcile-date    -> reconcile_date (datetime): Date of reconciliation
+        split:value             -> value (Decimal): Value in transaction currency
+        split:quantity          -> quantity (Decimal): Amount in account commodity
+        split:action            -> action (str): Type of action
+        split:account           -> account (Account): Reference to account
+        split:slots             -> slots (ElementBase): Additional information
 
     Not Implemented:
-        - split:lot          Optional lot information
-        - split:slots        Detailed slot elements
+        split:lot  Optional lot information
     """
 
     guid = GetText('split:id')
@@ -457,36 +406,3 @@ class Slot(etree.ElementBase):
 
     def __repr__(self):
         return f"<Slot {self.key}:{self.value}>"
-
-# @gnc_element('pricedb')
-# class PriceDB(etree.ElementBase):
-#     """
-#     A price database containing historical prices for commodities.
-#     <gnc:pricedb/>
-
-#     XML Structure:
-#         price -> prices (list[Price]): List of price entries
-#     """
-#     SUPPORTED_VERSIONS = ['1']
-
-#     def _init(self):
-#         """Initialize price database and verify version"""
-#         version = self.get('version', None)
-#         if version not in self.SUPPORTED_VERSIONS:
-#             raise UnsupportedVersionError(
-#                 f"PriceDB version '{version}' not supported. Supported version: {self.SUPPORTED_VERSIONS}"
-#             )
-#         self._prices = None
-
-#     def __repr__(self):
-#         return f"<PriceDB with {len(self.prices)} entries>"
-
-#     @property
-#     def prices(self):
-#         """
-#         Price entries with lazy loading.
-#         Returns list of Price objects.
-#         """
-#         if self._prices is None:
-#             self._prices = self.findall('price', namespaces=self.nsmap)
-#         return self._prices or []
