@@ -6,9 +6,10 @@
 
 import decimal
 from abc import ABC, abstractmethod
+from datetime import datetime
 from dateutil.parser import parse as parse_date
 from lxml import etree
-from typing import Any
+from typing import Any, Optional
 
 class QueryBase(ABC):
     """Base class for XML element query descriptors"""
@@ -43,11 +44,11 @@ class GetDate(QueryBase):
     def __init__(self, path: str):
         self.path = path
 
-    def query_function(self, obj: etree.ElementBase) -> Any:
+    def query_function(self, obj: etree.ElementBase) -> Optional[datetime]:
         date_str = obj.findtext(self.path, default=None, namespaces=obj.nsmap)
         if date_str is not None:
             return parse_date(date_str)
-
+        return None
 
 class GetNumber(QueryBase):
     """Query descriptor to retrieve a number from an XML element by path"""
